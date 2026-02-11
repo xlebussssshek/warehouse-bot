@@ -1,3 +1,7 @@
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![Aiogram](https://img.shields.io/badge/aiogram-3.x-green)
+![License](https://img.shields.io/badge/license-MIT-lightgrey)
+
 # Telegram-бот для складского учёта
 
 ## Описание проекта

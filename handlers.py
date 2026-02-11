@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.types import Message, FSInputFile
 from aiogram.filters import Command
 from config import ALLOWED_USER_IDS
-from database import get_item, add_quantity, remove_quantity, get_all_stock
+from database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item
 from excel import create_stock_report
 from logger import logger
 import re
@@ -38,6 +38,7 @@ async def cmd_start(message : Message):
         "/stock A-001 — узнать остаток\n"
         "/add A-001 Мышь 10 — добавить товар\n"
         "/remove A-001 2 — списать\n"
+        "/delete A-001 — удалить товар\n"
         "/report — выгрузить Excel"
     )
 
@@ -154,3 +155,76 @@ async def cmd_report(message: Message):
     await message.answer_document(doc, caption=f"Отчет на {filename}")
 
     log_action(user_id, "/report", f"успех: {filename}")
+
+
+@router.message(Command('rename'))
+async def cmd_rename(message: Message):
+    user_id = message.from_user.id
+    if not check_access(user_id):
+        log_action(user_id, "/rename", "доступ запрещён")
+        await message.answer(" Доступ запрещён")
+        return
+    
+    text = message.text.replace("/rename", '', 1).strip()
+
+    parts = text.split(maxsplit=1)
+    if len(parts) != 2:
+        await message.answer("Формат /rename A-001 Новое название товара")
+        return
+    
+    artikul = parts[0].upper()
+    new_name = parts[1]
+
+    success, result = rename_item(artikul, new_name)
+
+    if success:
+        log_action(user_id, f"/rename {artikul}", f"успех: {new_name}")
+        await message.answer(f"{result}")
+
+    else:
+        log_action(user_id, f"/rename {artikul}", f"ошибка{result}")
+        await message.answer(f"{result}")
+
+
+@router.message(Command('delete'))
+async def cmd_delete(message:Message):
+    user_id = message.from_user.id
+    if not check_access(user_id):
+        log_action(user_id, "/delete", "доступ запрещён")
+        await message.answer("Доступ запрещён")
+        return
+    
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer("Формат: /delete A-001")
+        return
+    
+    artikul = parts[1].upper()
+
+    await message.answer(f"Точно удалить {artikul}?\n"
+                         f"Напишите /confirm_delete {artikul} для подтверждения")
+    
+
+@router.message(Command('confirm_delete'))
+async def cmd_confirm_delete(message: Message):
+    user_id = message.from_user.id
+    if not check_access(user_id):
+        log_action(user_id, "/confirm_delete", "доступ запрещён")
+        await message.answer("Доступ запрещён")
+        return
+    
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer("Формат: /confirm_delete A-001")
+        return
+    
+    artikul = parts[1].upper()
+
+    success, result = delete_item(artikul)
+
+    if success:
+        log_action(user_id, f"/delete {artikul}", f"успех: удален")
+        await message.answer(f"{result}")
+    else:
+        log_action(user_id, f"/delete {artikul}", f"ошибка: {result}")
+        await message.answer(f"{result}")

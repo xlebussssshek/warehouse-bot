@@ -41,7 +41,7 @@ def add_quantity(artikul, name, quantity):
                       quantity = quantity + excluded.quantity
     ''', (artikul, name, quantity))
     conn.commit()
-    conn.close
+    conn.close()
 
 def remove_quantity(artikul, quantity):
     conn = sqlite3.connect(DB_NAME)
@@ -78,3 +78,37 @@ def get_all_stock():
     result = cursor.fetchall()
     conn.close()
     return result
+
+
+def rename_item(artikul, new_name):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT name FROM stock WHERE artikul = ?", (artikul,))
+    if not cursor.fetchone():
+        conn.close()
+        return False, "Товар не найден"
+    
+    cursor.execute("UPDATE stock SET name = ? WHERE artikul = ?",
+                   (new_name, artikul))
+    conn.commit()
+    conn.close()
+    return True, f"Товар {artikul} переименован в '{new_name}'"
+
+
+def delete_item(artikul):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT name FROM stock WHERE artikul = ?", (artikul,))
+    result = cursor.fetchone()
+    if not result:
+        conn.close()
+        return False, "Товар не найден"
+    
+    name = result[0]
+
+    cursor.execute("DELETE FROM stock WHERE artikul = ?", (artikul,))
+    conn.commit()
+    conn.close()
+    return True, f"Товар {artikul} - {name} удален со склада"
