@@ -1,17 +1,14 @@
-# Виртуальное окружение
+
 .venv/
 venv/
 env/
 __pycache__/
 *.pyc
-
-# Конфигурация с секретами
 config.py
 *.db
 *.log
 *.xlsx
 __pycache__/
-
-# Файлы среды разработки
 .vscode/
 .idea/
+*.env
