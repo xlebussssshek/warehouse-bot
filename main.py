@@ -1,9 +1,9 @@
 import asyncio
 from aiogram import Bot, Dispatcher
-from config import BOT_TOKEN
-from database import init_db
-from handlers import router
-from logger import logger
+from core.config import BOT_TOKEN
+from core.database import init_db
+from bot.handlers import router
+from logger.logger import logger
 
 
 async def main():

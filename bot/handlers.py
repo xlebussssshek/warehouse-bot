@@ -1,10 +1,10 @@
 from aiogram import Router
 from aiogram.types import Message, FSInputFile
 from aiogram.filters import Command
-from config import ALLOWED_USER_IDS
-from database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item
-from excel import create_stock_report
-from logger import logger
+from core.config import ALLOWED_USER_IDS
+from core.database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item
+from excel.excel import create_stock_report
+from logger.logger import logger
 import re
 
 
@@ -50,12 +50,10 @@ async def cmd_stock(message : Message):
         await message.answer("Доступ запрещён")
         return
     
-    parts = message.text.split()
-    if len(parts) != 2:
-        await message.answer("Формат: /stock A-001")
-        return
+
+    text = message.text.replace("/stock", "", 1).strip()
     
-    artikul = parts[1].upper()
+    artikul = text.upper()
     item = get_item(artikul)
 
     if not item:
@@ -76,37 +74,33 @@ async def cmd_add(message: Message):
         await message.answer("Доступ запрещён")
         return
     
-    # Получаем текст после команды
     text = message.text.replace("/add", "", 1).strip()
     
-    # Ищем ПОСЛЕДНЕЕ число — это количество
     parts = text.rsplit(maxsplit=1)
     
     if len(parts) != 2:
-        await message.answer(" Формат: /add A-001 Название товара 10")
+        await message.answer(" Формат: /add A-001 10")
         return
     
-    name_with_artikul = parts[0].strip()  # "A-001 Офисная мышь"
+    artikul = parts[0].upper()
     try:
-        quantity = int(parts[1])  # "10" -> 10
+        quantity = int(parts[1])
     except ValueError:
-        await message.answer(" Количество должно быть числом")
+        await message.answer("Количество должно быть числом")
         return
     
-    # Разделяем артикул и название
-    name_parts = name_with_artikul.split(maxsplit=1)
-    if len(name_parts) != 2:
-        await message.answer(" Укажите артикул и название")
+    item = get_item(artikul)
+
+    if not item:
+        log_action(user_id, f"/add {artikul}", "товар не найден")
+        await message.answer(f"Товар {artikul} не найден, проверьте артикул")
         return
     
-    artikul = name_parts[0].upper()
-    name = name_parts[1]  # Всё, что после артикула — название
-    
-    add_quantity(artikul, name, quantity)
-    new_qty = get_item(artikul)[1]
+    add_quantity(artikul, quantity)
+    new_qty = get_item(artikul)
     
     log_action(user_id, f"/add {artikul} {quantity}", f"успех: новый остаток {new_qty}")
-    await message.answer(f" Добавлено {quantity} шт.\n{artikul} - {name}\nТекущий остаток: {new_qty} шт.")
+    await message.answer(f" Добавлено {quantity} шт.\n{artikul} - {new_qty[0]}\nТекущий остаток: {new_qty[1]} шт.")
 
 @router.message(Command('remove'))
 async def cmd_remove(message : Message):
@@ -116,14 +110,16 @@ async def cmd_remove(message : Message):
         await message.answer("Доступ запрещён")
         return
     
-    parts = message.text.split()
-    if len(parts) != 3:
+    text = message.text.replace("/remove", "", 1).strip()
+
+    text = text.split()
+    if len(text) != 2:
         await message.answer("Формат /remove A-001 2")
         return
     
-    artikul = parts[1].upper()
+    artikul = text[0].upper()
     try:
-        quantity = int(parts[2])
+        quantity = int(text[1])
     except ValueError:
         await message.answer("Количество должно быть числом")
         return
@@ -193,13 +189,19 @@ async def cmd_delete(message:Message):
         log_action(user_id, "/delete", "доступ запрещён")
         await message.answer("Доступ запрещён")
         return
-    
+
     parts = message.text.split()
     if len(parts) != 2:
         await message.answer("Формат: /delete A-001")
         return
     
     artikul = parts[1].upper()
+    item = get_item(artikul)
+
+    if not item:
+        log_action(user_id, f"/delete {artikul}", "товар не найден")
+        await message.answer(f"Товар {artikul} не найден, проверьте артикул")
+        return
 
     await message.answer(f"Точно удалить {artikul}?\n"
                          f"Напишите /confirm_delete {artikul} для подтверждения")

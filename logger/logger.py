@@ -1,5 +1,5 @@
 import logging
-from config import LOG_FILE
+from core.config import LOG_FILE
 
 def setup_logger():
     logger = logging.getLogger('warehouse_bot')
