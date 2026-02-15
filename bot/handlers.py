@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.types import Message, FSInputFile
 from aiogram.filters import Command
 from core.config import ALLOWED_USER_IDS
-from core.database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item
+from core.database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item, new_item
 from excel.excel import create_stock_report
 from logger.logger import logger
 import re
@@ -14,6 +14,7 @@ def check_access(user_id):
     return user_id in ALLOWED_USER_IDS
 
 def log_action(user_id, command, message, **extra):
+    message = message.replace("\n", " ")
     logger.info(
         "",
         extra ={
@@ -35,10 +36,16 @@ async def cmd_start(message : Message):
     log_action(user_id, '/start', 'успех')
     await message.answer(
         "Добро пожаловать!\n\n"
+        "**Для существующих товаров:**\n"
+        "/add A-001 50 — добавить количество\n"
+        "/remove A-001 2 — списать\n\n"
+        "**Для новых товаров:**\n"
+        "/new A-999 Название товара — создать товар\n\n"
+        "**Проверка:**\n"
         "/stock A-001 — узнать остаток\n"
-        "/add A-001 Мышь 10 — добавить товар\n"
-        "/remove A-001 2 — списать\n"
-        "/delete A-001 — удалить товар\n"
+        "/rename A-001 Новое название — переименовать\n"
+        "/delete A-001 — удалить товар\n\n"
+        "**Отчёты:**\n"
         "/report — выгрузить Excel"
     )
 
@@ -54,7 +61,7 @@ async def cmd_stock(message : Message):
     text = message.text.replace("/stock", "", 1).strip()
     
     artikul = text.upper()
-    item = get_item(artikul)
+    item = await get_item(artikul)
 
     if not item:
         log_action(user_id, f"/stock {artikul}", "товар не найден")
@@ -89,18 +96,20 @@ async def cmd_add(message: Message):
         await message.answer("Количество должно быть числом")
         return
     
-    item = get_item(artikul)
+    if quantity <= 0:
+        await message.answer("Число должно быть положительным и не равным нулю")
+    
+    item = await get_item(artikul)
 
     if not item:
         log_action(user_id, f"/add {artikul}", "товар не найден")
-        await message.answer(f"Товар {artikul} не найден, проверьте артикул")
+        await message.answer(f"Товар {artikul} не найден, проверьте артикул или используйте /new для создания")
         return
     
-    add_quantity(artikul, quantity)
-    new_qty = get_item(artikul)
-    
-    log_action(user_id, f"/add {artikul} {quantity}", f"успех: новый остаток {new_qty}")
-    await message.answer(f" Добавлено {quantity} шт.\n{artikul} - {new_qty[0]}\nТекущий остаток: {new_qty[1]} шт.")
+    item_data = await add_quantity(artikul, quantity)
+
+    log_action(user_id, f"/add {artikul} {quantity}", f"успех: новый остаток {item_data}")
+    await message.answer(f" Добавлено {quantity} шт.\n{artikul} - {item_data[0]}\nТекущий остаток: {item_data[1]} шт.")
 
 @router.message(Command('remove'))
 async def cmd_remove(message : Message):
@@ -124,7 +133,7 @@ async def cmd_remove(message : Message):
         await message.answer("Количество должно быть числом")
         return
     
-    success, result = remove_quantity(artikul, quantity)
+    success, result = await remove_quantity(artikul, quantity)
 
     if success:
         log_action(user_id, f"/remove {artikul} {quantity}", f"успех {result}")
@@ -144,7 +153,7 @@ async def cmd_report(message: Message):
     
     await message.answer("Генерирую отчет")
 
-    data = get_all_stock()
+    data = await get_all_stock()
     filename = create_stock_report(data)
 
     doc = FSInputFile(filename)
@@ -171,7 +180,7 @@ async def cmd_rename(message: Message):
     artikul = parts[0].upper()
     new_name = parts[1]
 
-    success, result = rename_item(artikul, new_name)
+    success, result = await rename_item(artikul, new_name)
 
     if success:
         log_action(user_id, f"/rename {artikul}", f"успех: {new_name}")
@@ -196,7 +205,7 @@ async def cmd_delete(message:Message):
         return
     
     artikul = parts[1].upper()
-    item = get_item(artikul)
+    item = await get_item(artikul)
 
     if not item:
         log_action(user_id, f"/delete {artikul}", "товар не найден")
@@ -222,7 +231,7 @@ async def cmd_confirm_delete(message: Message):
     
     artikul = parts[1].upper()
 
-    success, result = delete_item(artikul)
+    success, result = await delete_item(artikul)
 
     if success:
         log_action(user_id, f"/delete {artikul}", f"успех: удален")
@@ -230,3 +239,30 @@ async def cmd_confirm_delete(message: Message):
     else:
         log_action(user_id, f"/delete {artikul}", f"ошибка: {result}")
         await message.answer(f"{result}")
+
+
+@router.message(Command('new'))
+async def cmd_new(message:Message):
+    user_id = message.from_user.id
+    if not check_access(user_id):
+        log_action(user_id, "/new", "доступ запрещён")
+        await message.answer("Доступ запрещён")
+        return
+    text = message.text.replace("/new", "", 1).strip()
+    parts = text.split(maxsplit=1)
+
+    if len(parts) != 2:
+        await message.answer("Формат: /new A-001 Название товара")
+        return
+    
+    artikul = parts[0].upper()
+    name = parts[1]
+
+    success, result = await new_item(artikul, name)
+    
+    if success:
+        log_action(user_id, f"/new {artikul}", f"создан товар {name}")
+    else:
+        log_action(user_id, f"/new {artikul}", f"ошибка: {result}")
+    
+    await message.answer(result)

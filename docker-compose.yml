@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: warehouse_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: warehouse
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres  # для разработки норм, потом сменишь
+    ports:
+      - "5432:5432"  # левый порт(хост):правый порт(контейнер)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # чтобы данные не терялись
+    command: postgres -c 'max_connections=100'  # опционально, можно убрать
+
+volumes:
+  postgres_data:
+    name: warehouse_postgres_data

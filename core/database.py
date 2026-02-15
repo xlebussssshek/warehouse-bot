@@ -1,133 +1,163 @@
 from core.config import DB_NAME
 
-
-from sqlalchemy import create_engine
+from contextlib import asynccontextmanager
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from models.stock import Stock, Base
+from core.config import PG_URL
 
-engine = create_engine(f"sqlite:///{DB_NAME}", echo=True)
-SessionLocal = sessionmaker(bind=engine)
+engine = create_async_engine(PG_URL, echo=True)
+SessionLocal = sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+    )
 
-def get_session():
-    return SessionLocal()
+@asynccontextmanager
+async def get_session():
+    async with SessionLocal() as session:
+        yield session
 
 
-def init_db():
-    Base.metadata.create_all(engine)
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    session = get_session()
-    try:
-        count = session.query(Stock).count()
-
-        if count == 0:
+    async with get_session() as session:
+        result = await session.execute(select(Stock))
+        rows = result.scalars().all()
+        
+        if len(rows) == 0:
             test_data = [
-                Stock(artikul = 'A-001', name = 'Мышь', quantity = 10),
-                Stock(artikul = 'A-002', name = 'Клавиатура', quantity = 5),
-                Stock(artikul = 'A-003', name = 'Монитор', quantity = 2),
+                Stock(artikul='A-001', name='Мышь', quantity=10),
+                Stock(artikul='A-002', name='Клавиатура', quantity=5),
+                Stock(artikul='A-003', name='Монитор', quantity=2),
             ]
-
             session.add_all(test_data)
-            session.commit()
+            await session.commit()
             print("Добавлены тестовые данные")
         else:
-            print(f"В базе уже есть {count} товаров")
-    except Exception as e:
-        session.rollback()
-        print(f"Ошибка инициализации БД: {e}")
-    finally:
-        session.close()
+            print(f"В базе уже есть {len(rows)} товаров")
 
 
-def get_item(artikul):
-    session = get_session()
-    try:
-        item = session.query(Stock).filter(Stock.artikul == artikul).first()
+async def get_item(artikul):
+    async with get_session() as session:
+        result = await session.execute(
+                select(Stock).where(Stock.artikul == artikul)
+                )
+        item = result.scalar_one_or_none()
+        return (item.name, item.quantity) if item else None
 
-        if item:
+
+async def add_quantity(artikul, quantity):
+    async with get_session() as session:
+        try:
+            result = await session.execute(select(Stock).where(Stock.artikul == artikul))
+            item = result.scalar_one()
+
+            if item:
+                item.quantity += quantity
+
+            await session.commit()
             return (item.name, item.quantity)
-        return None
-    finally:
-        session.close()
-
-def add_quantity(artikul, quantity):
-    session = get_session()
-    try:
-        item = session.query(Stock).filter(Stock.artikul == artikul).first()
-
-        if item:
-            item.quantity += quantity
-
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"Ошибка: {e}")
-        return None
-    finally:
-        session.close()
+        except Exception as e:
+            await session.rollback()
+            print(f"Ошибка: {e}")
+            return None
 
 
-def remove_quantity(artikul, quantity):
-    session = get_session()
-    try:
-        item = session.query(Stock).filter(Stock.artikul == artikul).first()
+async def remove_quantity(artikul, quantity):
+    async with get_session() as session:
+        try:
+            result = await session.execute(select(Stock).where(Stock.artikul == artikul))
+            item = result.scalar_one_or_none()
 
-        if not item:
-            return False, "Товар не найден"
-        if item.quantity < quantity:
-            return False, f"Недостаточно. Доступно: {item.quantity}"
-        item.quantity -= quantity
-        session.commit()
-        return True, f"Списано {quantity}. Остаток {item.quantity}"
-    except Exception as e:
-        session.rollback()
-        return False, f"Ошибка: {e}"
-    finally:
-        session.close()
+            if not item:
+                return False, "Товар не найден"
+            if item.quantity < quantity:
+                return False, f"Недостаточно. Доступно: {item.quantity}"
+            item.quantity -= quantity
+            await session.commit()
+            return True, f"Списано {quantity}. Остаток {item.quantity}"
+        except Exception as e:
+            await session.rollback()
+            return False, f"Ошибка: {e}"
 
 
-def get_all_stock():
-    session = get_session()
-    try:
-        items = session.query(Stock).order_by(Stock.artikul).all()
+async def get_all_stock():
+    async with get_session() as session:
+        result = await session.execute(select(Stock).order_by(Stock.artikul))
+        items = result.scalars().all()
         return[(item.artikul, item.name, item.quantity) for item in items]
-    finally:
-        session.close()
-
-
-def rename_item(artikul, new_name):
-    session = get_session()
-    try:
-        item = session.query(Stock).filter(Stock.artikul == artikul).first()
-
-        if not item:
-            return False, "Товар не найден"
-            
-        item.name = new_name
-        session.commit()
-        return True, f"Товар {artikul} переименован в '{new_name}'"
-    except Exception as e:
-        session.rollback()
-        return False, f"Ошибка: {e}"
-    finally:
-        session.close()
-
-def delete_item(artikul):
-    session = get_session()
-    try:
-        item = session.query(Stock).filter(Stock.artikul == artikul).first()
-
-        if not item:
-            return False, "Товар не найден"
         
-        name = item.name
-        session.delete(item)
-        session.commit()
-        return True, f"Товар {artikul} - {name} удален со склада"
-    except Exception as e:
-        session.rollback()
-        return False, f"Ошибка: {e}"
-    finally:
-        session.close()
+
+
+async def rename_item(artikul, new_name):
+    async with get_session() as session:
+        try:
+            result = await session.execute(select(Stock).where(Stock.artikul == artikul))
+            item = result.scalar_one_or_none()
+
+            if not item:
+                return False, "Товар не найден"
+                
+            item.name = new_name
+            await session.commit()
+            return True, f"Товар {artikul} переименован в '{new_name}'"
+        except Exception as e:
+            await session.rollback()
+            return False, f"Ошибка: {e}"
+
+
+
+async def delete_item(artikul):
+    async with get_session() as session:
+        try:
+            result = await session.execute(select(Stock).where(Stock.artikul == artikul))
+            item = result.scalar_one_or_none()
+
+            if not item:
+                return False, "Товар не найден"
+            
+            name = item.name
+            await session.delete(item)
+            await session.commit()
+            return True, f"Товар {artikul} - {name} удален со склада"
+        except Exception as e:
+            await session.rollback()
+            return False, f"Ошибка: {e}"
+
+
+async def new_item(artikul, name):
+    async with get_session() as session:
+        try:
+            result = await session.execute(select(Stock).where(Stock.artikul == artikul))
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                return False, f"Артикул {artikul} уже существует! Товар: {existing.name}"
+            
+            existing_by_name = await session.execute(select(Stock).where(func.lower(Stock.name) == func.lower(name)))
+            existing_by_name = existing_by_name.scalar_one_or_none()
+            if existing_by_name:
+                return False, (
+                    f"Товар с названием «{name}» уже существует!\n"
+                    f"Артикул: {existing_by_name.artikul}\n"
+                    f"Название: {existing_by_name.name}\n"
+                    f"Остаток: {existing_by_name.quantity}\n\n"
+                    f"Используйте этот артикул для добавления товара."
+                )
+
+            new_stock = Stock(artikul=artikul, name=name, quantity=0)
+
+            await session.add(new_stock)
+            await session.commit()
+
+            return True, f"Создан новый товар: {artikul} - {name}"
+        except Exception as e:
+            await session.rollback()
+            return False, f"Ошибка при создании товара: {e}"
 
 
 
