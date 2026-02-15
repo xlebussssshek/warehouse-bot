@@ -23,7 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel
-from models.stock import Base
+from models.base import Base
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 

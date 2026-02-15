@@ -1,7 +1,5 @@
 from sqlalchemy import Column, String, Integer
-from sqlalchemy.orm import declarative_base
-
-Base = declarative_base()
+from .base import Base
 
 class Stock(Base):
     __tablename__ = "stock"

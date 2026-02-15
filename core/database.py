@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from models.stock import Stock, Base
 from core.config import PG_URL
+from models.transactions import Transaction
+
 
 engine = create_async_engine(PG_URL, echo=True)
 SessionLocal = sessionmaker(
@@ -41,6 +43,23 @@ async def init_db():
             print(f"В базе уже есть {len(rows)} товаров")
 
 
+async def log_transaction(artikul, type, user_id, quantity=None, old_quantity=None, new_quantity=None, details=None):
+    
+    async with get_session() as session:
+        transaction = Transaction(
+            artikul = artikul,
+            type = type,
+            quantity = quantity,
+            old_quantity = old_quantity,
+            new_quantity = new_quantity,
+            user_id = user_id,
+            details = details,
+        )
+
+        session.add(transaction)
+        await session.commit()
+
+
 async def get_item(artikul):
     async with get_session() as session:
         result = await session.execute(
@@ -50,16 +69,29 @@ async def get_item(artikul):
         return (item.name, item.quantity) if item else None
 
 
-async def add_quantity(artikul, quantity):
+async def add_quantity(artikul, quantity, user_id):
     async with get_session() as session:
         try:
             result = await session.execute(select(Stock).where(Stock.artikul == artikul))
             item = result.scalar_one()
 
             if item:
+                old_qty = item.quantity
                 item.quantity += quantity
 
             await session.commit()
+
+            
+            await log_transaction(
+                artikul = artikul,
+                type = 'add',
+                quantity = quantity,
+                old_quantity = old_qty,
+                new_quantity = item.quantity,
+                user_id = user_id
+                )
+
+
             return (item.name, item.quantity)
         except Exception as e:
             await session.rollback()
@@ -67,7 +99,7 @@ async def add_quantity(artikul, quantity):
             return None
 
 
-async def remove_quantity(artikul, quantity):
+async def remove_quantity(artikul, quantity, user_id):
     async with get_session() as session:
         try:
             result = await session.execute(select(Stock).where(Stock.artikul == artikul))
@@ -77,8 +109,19 @@ async def remove_quantity(artikul, quantity):
                 return False, "Товар не найден"
             if item.quantity < quantity:
                 return False, f"Недостаточно. Доступно: {item.quantity}"
+            old_qty = item.quantity
             item.quantity -= quantity
             await session.commit()
+
+            await log_transaction(
+                artikul = artikul,
+                type = 'remove',
+                quantity = quantity,
+                old_quantity = old_qty,
+                new_quantity = item.quantity,
+                user_id = user_id
+                )
+            
             return True, f"Списано {quantity}. Остаток {item.quantity}"
         except Exception as e:
             await session.rollback()
@@ -93,7 +136,7 @@ async def get_all_stock():
         
 
 
-async def rename_item(artikul, new_name):
+async def rename_item(artikul, new_name, user_id):
     async with get_session() as session:
         try:
             result = await session.execute(select(Stock).where(Stock.artikul == artikul))
@@ -101,9 +144,18 @@ async def rename_item(artikul, new_name):
 
             if not item:
                 return False, "Товар не найден"
-                
+            
+            oldname = item.name
             item.name = new_name
             await session.commit()
+
+            await log_transaction(
+                artikul = artikul,
+                type = 'rename',
+                user_id = user_id,
+                details= f"Товар {oldname} был переименован в {item.name}"
+                )
+
             return True, f"Товар {artikul} переименован в '{new_name}'"
         except Exception as e:
             await session.rollback()
@@ -111,7 +163,7 @@ async def rename_item(artikul, new_name):
 
 
 
-async def delete_item(artikul):
+async def delete_item(artikul, user_id):
     async with get_session() as session:
         try:
             result = await session.execute(select(Stock).where(Stock.artikul == artikul))
@@ -123,13 +175,20 @@ async def delete_item(artikul):
             name = item.name
             await session.delete(item)
             await session.commit()
+
+            await log_transaction(
+                artikul = artikul,
+                type = 'delete',
+                user_id = user_id,
+                )
+
             return True, f"Товар {artikul} - {name} удален со склада"
         except Exception as e:
             await session.rollback()
             return False, f"Ошибка: {e}"
 
 
-async def new_item(artikul, name):
+async def new_item(artikul, name, user_id):
     async with get_session() as session:
         try:
             result = await session.execute(select(Stock).where(Stock.artikul == artikul))
@@ -151,14 +210,25 @@ async def new_item(artikul, name):
 
             new_stock = Stock(artikul=artikul, name=name, quantity=0)
 
-            await session.add(new_stock)
+            session.add(new_stock)
             await session.commit()
+
+            await log_transaction(
+                artikul = artikul,
+                type = 'new_item',
+                user_id = user_id,
+                details=name
+                )
 
             return True, f"Создан новый товар: {artikul} - {name}"
         except Exception as e:
             await session.rollback()
             return False, f"Ошибка при создании товара: {e}"
 
-
+async def get_history():
+    async with get_session() as session:
+        result = await session.execute(select(Transaction).order_by(Transaction.id))
+        items = result.scalars().all()
+        return[(item.id, item.artikul, item.type, item.quantity, item.old_quantity, item.new_quantity, item.user_id, item.details, item.timestamp) for item in items]
 
 

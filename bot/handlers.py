@@ -2,8 +2,8 @@ from aiogram import Router
 from aiogram.types import Message, FSInputFile
 from aiogram.filters import Command
 from core.config import ALLOWED_USER_IDS
-from core.database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item, new_item
-from excel.excel import create_stock_report
+from core.database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item, new_item, get_history
+from excel.excel import create_stock_report, history_report
 from logger.logger import logger
 import re
 
@@ -106,7 +106,7 @@ async def cmd_add(message: Message):
         await message.answer(f"Товар {artikul} не найден, проверьте артикул или используйте /new для создания")
         return
     
-    item_data = await add_quantity(artikul, quantity)
+    item_data = await add_quantity(artikul, quantity, user_id)
 
     log_action(user_id, f"/add {artikul} {quantity}", f"успех: новый остаток {item_data}")
     await message.answer(f" Добавлено {quantity} шт.\n{artikul} - {item_data[0]}\nТекущий остаток: {item_data[1]} шт.")
@@ -133,7 +133,7 @@ async def cmd_remove(message : Message):
         await message.answer("Количество должно быть числом")
         return
     
-    success, result = await remove_quantity(artikul, quantity)
+    success, result = await remove_quantity(artikul, quantity, user_id)
 
     if success:
         log_action(user_id, f"/remove {artikul} {quantity}", f"успех {result}")
@@ -180,7 +180,7 @@ async def cmd_rename(message: Message):
     artikul = parts[0].upper()
     new_name = parts[1]
 
-    success, result = await rename_item(artikul, new_name)
+    success, result = await rename_item(artikul, new_name, user_id)
 
     if success:
         log_action(user_id, f"/rename {artikul}", f"успех: {new_name}")
@@ -231,7 +231,7 @@ async def cmd_confirm_delete(message: Message):
     
     artikul = parts[1].upper()
 
-    success, result = await delete_item(artikul)
+    success, result = await delete_item(artikul, user_id)
 
     if success:
         log_action(user_id, f"/delete {artikul}", f"успех: удален")
@@ -258,7 +258,7 @@ async def cmd_new(message:Message):
     artikul = parts[0].upper()
     name = parts[1]
 
-    success, result = await new_item(artikul, name)
+    success, result = await new_item(artikul, name, user_id)
     
     if success:
         log_action(user_id, f"/new {artikul}", f"создан товар {name}")
@@ -266,3 +266,24 @@ async def cmd_new(message:Message):
         log_action(user_id, f"/new {artikul}", f"ошибка: {result}")
     
     await message.answer(result)
+
+
+
+@router.message(Command('history'))
+async def cmd_history(message : Message):
+    user_id = message.from_user.id
+    if not check_access(user_id):
+        log_action(user_id, "/history", "доступ запрещён")
+        await message.answer(" Доступ запрещён")
+        return
+    
+    await message.answer("Генерирую отчет по истории операций")
+
+    data = await get_history()
+    filename = history_report(data)
+
+    doc = FSInputFile(filename)
+    await message.answer_document(doc, caption=f"Отчет на {filename}")
+
+    log_action(user_id, "/report", f"успех: {filename}")
+
