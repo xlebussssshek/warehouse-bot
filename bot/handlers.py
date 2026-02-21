@@ -5,7 +5,6 @@ from core.config import ALLOWED_USER_IDS
 from core.database import get_item, add_quantity, remove_quantity, get_all_stock, rename_item, delete_item, new_item, get_history
 from excel.excel import create_stock_report, history_report
 from logger.logger import logger
-import re
 
 
 router = Router()
@@ -234,7 +233,7 @@ async def cmd_confirm_delete(message: Message):
     success, result = await delete_item(artikul, user_id)
 
     if success:
-        log_action(user_id, f"/delete {artikul}", f"успех: удален")
+        log_action(user_id, f"/delete {artikul}", "успех: удален")
         await message.answer(f"{result}")
     else:
         log_action(user_id, f"/delete {artikul}", f"ошибка: {result}")
