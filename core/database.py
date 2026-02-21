@@ -1,5 +1,3 @@
-from core.config import DB_NAME
-
 from contextlib import asynccontextmanager
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession

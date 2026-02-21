@@ -1,7 +1,6 @@
 from sqlalchemy import Column, String, Integer, DateTime, BigInteger
 from sqlalchemy.sql import func
 from .base import Base
-from datetime import datetime
 
 class Transaction(Base):
     __tablename__ = "transactions"
